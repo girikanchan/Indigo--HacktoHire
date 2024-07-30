@@ -3,10 +3,12 @@ import FlightBooking from '../model/booking';
 import FlightSubscriptionModel from '../model/FlightSubscription';
 import CustomError from '../utils/customError';
 import sendNotification from '../utils/notificationProducer';
+import { findUserEmail } from './user.controller';
 
 export const bookFlight = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { userId, flightId, seatNumber, userEmail } = req.body;
+    const { userId, flightId, seatNumber} = req.body;
+    const userEmail = await findUserEmail(userId,next);
 
     if (!userId || !flightId || !seatNumber || !userEmail) {
       return next(new CustomError('Missing required fields', 400));
@@ -39,11 +41,21 @@ export const bookFlight = async (req: Request, res: Response, next: NextFunction
   }
 };
 
-export const cancelBooking = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { bookingId } = req.params;
-    const { userEmail } = req.body;
+export const findBookingIdUserId = async (bookingId: string): Promise<string | null> => {
+  const booking = await FlightBooking.findById(bookingId);
+  return booking ? booking.userId.toString(): null;
+};
 
+export const cancelBooking = async (req: Request, res: Response, next: NextFunction) => {
+  const { bookingId } = req.params;
+  
+  try {
+    const userId = await findBookingIdUserId(bookingId);
+    if (!userId) {
+      return next(new CustomError('Booking not found', 404));
+    }
+
+    const userEmail = await findUserEmail(userId,next);
     if (!userEmail) {
       return next(new CustomError('User email is required', 400));
     }
@@ -57,6 +69,7 @@ export const cancelBooking = async (req: Request, res: Response, next: NextFunct
     if (!booking) {
       return next(new CustomError('Booking not found', 404));
     }
+
     await FlightSubscriptionModel.findOneAndDelete({
       userId: booking.userId,
       flightId: booking.flightId,
@@ -88,8 +101,12 @@ export const updateBooking = async (req: Request, res: Response, next: NextFunct
   try {
     const { bookingId } = req.params;
     const updates = req.body;
-    const { userEmail } = req.body;
+    const userId = await findBookingIdUserId(bookingId);
+    if (!userId) {
+      return next(new CustomError('Booking not found', 404));
+    }
 
+    const userEmail = await findUserEmail(userId,next);
     if (!userEmail) {
       return next(new CustomError('User email is required', 400));
     }

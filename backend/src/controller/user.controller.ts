@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import UserModel from '../model/user';
 import config from '../../config'
+import CustomError from '../utils/customError';
 
 const JWT_SECRET = config.SECRET_KEY;
 
@@ -81,5 +82,16 @@ export const updateUser = async (req: Request, res: Response, next:NextFunction)
     res.status(200).json({ message: 'User updated successfully', user: user.toJSON() });
   } catch (error) {
     next(error)
+  }
+};
+
+export const findUserEmail = async (userId: string, next: NextFunction) => {
+  try {
+    const user = await UserModel.findById(userId);
+    if (user) {
+      return user.email;
+    }
+  } catch (error) {
+    next(error);
   }
 };
