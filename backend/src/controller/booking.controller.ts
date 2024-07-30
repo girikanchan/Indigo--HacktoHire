@@ -1,21 +1,34 @@
-import { Request, Response,NextFunction } from 'express';
-import FlightBooking from '../model/booking'; // Adjust path as needed
-import FlightSubscriptionModel from '../model/FlightSubscription'; // Adjust path as needed
-import CustomError  from '../utils/customError'; // Adjust path as needed
+import { Request, Response, NextFunction } from 'express';
+import FlightBooking from '../model/booking';
+import FlightSubscriptionModel from '../model/FlightSubscription';
+import CustomError from '../utils/customError';
+import sendNotification from '../utils/notificationProducer';
 
 export const bookFlight = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { userId, flightId, seatNumber } = req.body;
+    const { userId, flightId, seatNumber, userEmail } = req.body;
 
-    const booking = new FlightBooking({
-      userId,
-      flightId,
-      seatNumber,
-    });
+    if (!userId || !flightId || !seatNumber || !userEmail) {
+      return next(new CustomError('Missing required fields', 400));
+    }
 
+    const booking = new FlightBooking({ userId, flightId, seatNumber });
     await booking.save();
 
     await FlightSubscriptionModel.create({ userId, flightId });
+
+    try {
+      await sendNotification({
+        flightId,
+        userId,
+        message: 'Flight booked successfully!',
+        sentAt: new Date(),
+        deliveryMethod: 'email',
+        userEmail
+      });
+    } catch (notificationError) {
+      console.error('Notification failed:', notificationError);
+    }
 
     res.status(201).json({
       message: 'Flight booked successfully!',
@@ -29,6 +42,11 @@ export const bookFlight = async (req: Request, res: Response, next: NextFunction
 export const cancelBooking = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { bookingId } = req.params;
+    const { userEmail } = req.body;
+
+    if (!userEmail) {
+      return next(new CustomError('User email is required', 400));
+    }
 
     const booking = await FlightBooking.findByIdAndUpdate(
       bookingId,
@@ -39,11 +57,23 @@ export const cancelBooking = async (req: Request, res: Response, next: NextFunct
     if (!booking) {
       return next(new CustomError('Booking not found', 404));
     }
-
     await FlightSubscriptionModel.findOneAndDelete({
       userId: booking.userId,
       flightId: booking.flightId,
     });
+
+    try {
+      await sendNotification({
+        bookingId: booking._id.toString(),
+        userId: booking.userId.toString(),
+        message: 'Flight booking cancelled.',
+        sentAt: new Date(),
+        deliveryMethod: 'email',
+        userEmail
+      });
+    } catch (notificationError) {
+      console.error('Notification failed:', notificationError);
+    }
 
     res.status(200).json({
       message: 'Booking cancelled and subscription removed!',
@@ -58,6 +88,11 @@ export const updateBooking = async (req: Request, res: Response, next: NextFunct
   try {
     const { bookingId } = req.params;
     const updates = req.body;
+    const { userEmail } = req.body;
+
+    if (!userEmail) {
+      return next(new CustomError('User email is required', 400));
+    }
 
     const booking = await FlightBooking.findByIdAndUpdate(
       bookingId,
@@ -67,6 +102,19 @@ export const updateBooking = async (req: Request, res: Response, next: NextFunct
 
     if (!booking) {
       return next(new CustomError('Booking not found', 404));
+    }
+
+    try {
+      await sendNotification({
+        bookingId: booking._id.toString(),
+        userId: booking.userId.toString(),
+        message: 'Flight booking updated.',
+        sentAt: new Date(),
+        deliveryMethod: 'email',
+        userEmail
+      });
+    } catch (notificationError) {
+      console.error('Notification failed:', notificationError);
     }
 
     res.status(200).json({
